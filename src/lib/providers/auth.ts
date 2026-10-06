@@ -18,8 +18,8 @@ class SupabaseAuthProvider implements AuthProvider {
     return {
       id: data.user.id,
       email: data.user.email!,
-      role: data.user.user_metadata.role,
-      tenantId: data.user.user_metadata.tenant_id,
+      role: data.user.app_metadata?.role ?? '',
+      tenantId: data.user.app_metadata?.tenant_id ?? '',
     }
   }
 
@@ -33,8 +33,8 @@ class SupabaseAuthProvider implements AuthProvider {
     return {
       id: user.id,
       email: user.email!,
-      role: user.user_metadata.role,
-      tenantId: user.user_metadata.tenant_id,
+      role: user.app_metadata?.role ?? '',
+      tenantId: user.app_metadata?.tenant_id ?? '',
     }
   }
 }

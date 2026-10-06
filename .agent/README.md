@@ -1,5 +1,10 @@
 # SaaS Course Skills
 
+> **Registered as ELSHEKH RIDES project defaults.** This folder is set in
+> Hermes as `skills.external_dirs` (`hermes config get skills.external_dirs`),
+> so all 13 skills below load automatically from any working directory — no
+> per-session setup needed. See `../AGENTS.md` for the task → skill routing table.
+
 This folder contains reusable AI-agent skills for building, reviewing, testing, deploying, and growing SaaS products.
 
 Most installable skills are directories with a `SKILL.md` file. Some top-level markdown files are source notes, not installable skills.

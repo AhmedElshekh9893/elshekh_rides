@@ -29,7 +29,7 @@ export default function CompanyReportsPage() {
         return
       }
 
-      const tenantId = user.user_metadata.tenant_id
+      const tenantId = user.app_metadata?.tenant_id ?? ''
 
       const { data: trips } = await supabase.from("trips").select("status").eq("tenant_id", tenantId)
       const { data: invoices } = await supabase.from("invoices").select("amount").eq("tenant_id", tenantId).eq("status", "paid")

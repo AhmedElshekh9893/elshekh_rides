@@ -25,7 +25,7 @@ export default function CompanySubscriptionsPage() {
         return
       }
 
-      const tenantId = user.user_metadata.tenant_id
+      const tenantId = user.app_metadata?.tenant_id ?? ''
       const { data } = await supabase
         .from("subscriptions")
         .select("*, employees(*), routes(*)")

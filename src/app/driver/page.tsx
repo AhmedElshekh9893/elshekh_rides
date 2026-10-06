@@ -41,7 +41,7 @@ export default function DriverTripsPage() {
   return (
     <div className="p-4 space-y-4">
       <div className="bg-white rounded-lg border border-gray-200 p-4">
-        <h2 className="text-lg font-semibold text-gray-900">Today's Trips</h2>
+        <h2 className="text-lg font-semibold text-gray-900">Today&apos;s Trips</h2>
         <p className="text-sm text-gray-500">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</p>
       </div>
 

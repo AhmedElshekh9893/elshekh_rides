@@ -27,7 +27,7 @@ export default function CompanyOverviewPage() {
         return
       }
 
-      const tenantId = user.user_metadata.tenant_id
+      const tenantId = user.app_metadata?.tenant_id ?? ''
 
       const { data: employees } = await supabase.from("employees").select("id").eq("tenant_id", tenantId)
       const { data: subscriptions } = await supabase.from("subscriptions").select("id").eq("tenant_id", tenantId).eq("status", "active")

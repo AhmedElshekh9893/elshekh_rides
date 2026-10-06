@@ -22,7 +22,7 @@ export default function CompanyEmployeesPage() {
         return
       }
 
-      const tenantId = user.user_metadata.tenant_id
+      const tenantId = user.app_metadata?.tenant_id ?? ''
       const { data } = await supabase.from("employees").select("*").eq("tenant_id", tenantId).order("name")
       setEmployees(data || [])
       setLoading(false)

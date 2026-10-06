@@ -1,17 +1,16 @@
 import { NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { getAuthContext } from '@/lib/supabase-server'
 
 export async function GET() {
-  const { data: { user }, error } = await supabase.auth.getUser()
-  if (error || !user) {
+  const auth = await getAuthContext()
+  if (!auth) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   return NextResponse.json({
-    id: user.id,
-    email: user.email,
-    role: user.user_metadata.role,
-    tenantId: user.user_metadata.tenant_id,
-    name: user.user_metadata.name,
+    id: auth.userId,
+    email: auth.email,
+    role: auth.role,
+    tenantId: auth.tenantId,
   })
 }

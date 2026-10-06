@@ -11,7 +11,8 @@ export async function logAudit(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return
 
-  const tenantId = user.user_metadata.tenant_id
+  // tenant_id lives in app_metadata (server-controlled), never user_metadata.
+  const tenantId = user.app_metadata?.tenant_id
   if (!tenantId) return
 
   await supabase.from('audit_logs').insert({

@@ -1,37 +1,32 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
-import { z } from 'zod'
+import { NextResponse } from 'next/server'
+import { createSupabaseServerClient } from '@/lib/supabase-server'
 
-const refreshSchema = z.object({
-  refresh_token: z.string().min(1),
-})
+/**
+ * Session refresh is handled by the middleware on every protected request.
+ * This endpoint exists for clients that want to refresh explicitly; it reports
+ * the current session state rather than accepting a raw token, so the refresh
+ * token never travels through a JSON body.
+ */
+export async function POST() {
+  const supabase = await createSupabaseServerClient()
 
-export async function POST(req: NextRequest) {
-  const body = await req.json()
-  const parsed = refreshSchema.safeParse(body)
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
-  }
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser()
 
-  const { data, error } = await supabase.auth.refreshSession({
-    refresh_token: parsed.data.refresh_token,
-  })
-
-  if (error || !data.user || !data.session) {
+  if (error || !user) {
     return NextResponse.json({ error: 'Refresh failed' }, { status: 401 })
   }
 
+  const appMeta = (user.app_metadata ?? {}) as Record<string, unknown>
+
   return NextResponse.json({
     user: {
-      id: data.user.id,
-      email: data.user.email,
-      role: data.user.user_metadata.role,
-      tenantId: data.user.user_metadata.tenant_id,
-    },
-    session: {
-      access_token: data.session.access_token,
-      refresh_token: data.session.refresh_token,
-      expires_at: data.session.expires_at,
+      id: user.id,
+      email: user.email,
+      role: (appMeta.role as string) ?? '',
+      tenantId: (appMeta.tenant_id as string) ?? '',
     },
   })
 }
