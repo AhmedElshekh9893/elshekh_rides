@@ -2,25 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { authorize } from '@/lib/api-auth'
 import { logAudit } from '@/lib/audit-server'
-import { canTransition, type TripStatus } from '@/lib/trip-state-machine'
+import {
+  canPerformAction,
+  resolveTransition,
+  TRIP_ACTIONS,
+  type TripStatus,
+} from '@/lib/trip-state-machine'
 
 const transitionSchema = z.object({
-  action: z.enum(['publish', 'assign', 'confirm', 'start', 'complete', 'cancel', 'fail']),
+  action: z.enum(TRIP_ACTIONS as [string, ...string[]]),
 })
-
-/** Maps a user-facing action onto the status it produces. */
-const ACTION_TARGET: Record<string, TripStatus> = {
-  publish: 'scheduled',
-  assign: 'assigned',
-  confirm: 'ready',
-  start: 'in_progress',
-  complete: 'completed',
-  cancel: 'cancelled',
-  fail: 'failed',
-}
-
-/** Drivers may only drive their own trips forward. */
-const DRIVER_ALLOWED_ACTIONS = new Set(['start', 'complete', 'fail'])
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorize('trips', 'write')
@@ -33,9 +24,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
 
-  if (auth.role === 'driver' && !DRIVER_ALLOWED_ACTIONS.has(parsed.data.action)) {
+  const action = parsed.data.action as (typeof TRIP_ACTIONS)[number]
+
+  // Role gate: drivers may only execute, never dispatch.
+  if (!canPerformAction(action, auth.role)) {
     return NextResponse.json(
-      { error: `Forbidden: drivers cannot perform '${parsed.data.action}'` },
+      { error: `Forbidden: role '${auth.role}' cannot perform '${action}'` },
       { status: 403 }
     )
   }
@@ -53,12 +47,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const currentStatus = trip.status as TripStatus
-  const nextStatus = ACTION_TARGET[parsed.data.action]
 
   // Single source of truth: the shared state machine.
-  if (!canTransition(currentStatus, nextStatus)) {
+  const nextStatus = resolveTransition(currentStatus, action)
+  if (!nextStatus) {
     return NextResponse.json(
-      { error: `Invalid transition: ${currentStatus} -> ${nextStatus}` },
+      { error: `Invalid transition: ${currentStatus} -> ${action}` },
       { status: 400 }
     )
   }
@@ -74,7 +68,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   // Constitution VI: every state transition leaves an audit trail.
-  await logAudit(auth, `trip_${parsed.data.action}`, 'trip', id, trip, data)
+  await logAudit(auth, `trip_${action}`, 'trip', id, trip, data)
 
   return NextResponse.json(data)
 }

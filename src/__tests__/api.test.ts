@@ -1,78 +1,149 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 
-describe('API Structure', () => {
-  describe('Auth Endpoints', () => {
-    it('should have login endpoint', () => {
-      const endpoints = ['/api/auth/login', '/api/auth/logout', '/api/auth/refresh', '/api/auth/me']
-      expect(endpoints).toContain('/api/auth/login')
-    })
+/**
+ * These tests inspect the REAL API route files on disk.
+ *
+ * The previous version asserted that string literals like '/api/tenants'
+ * started with '/api/' - it passed whether or not any route existed, and
+ * could not fail when auth was missing. This version reads the actual
+ * source and enforces the security invariants that were violated before.
+ */
+
+const API_ROOT = join(process.cwd(), 'src', 'app', 'api')
+
+/** Every route.ts under src/app/api, with its path relative to API_ROOT. */
+function collectRoutes(dir: string = API_ROOT): { path: string; file: string }[] {
+  const out: { path: string; file: string }[] = []
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry)
+    if (statSync(full).isDirectory()) {
+      out.push(...collectRoutes(full))
+    } else if (entry === 'route.ts') {
+      const rel = full.slice(API_ROOT.length + 1).replace(/\\/g, '/').replace('/route.ts', '')
+      out.push({ path: '/' + rel, file: full })
+    }
+  }
+  return out
+}
+
+const ROUTES = collectRoutes()
+
+/** Routes that authenticate via getAuthContext directly (not authorize()). */
+const AUTH_ROUTES = ['/auth/login', '/auth/logout', '/auth/me', '/auth/refresh']
+
+const read = (file: string) => readFileSync(file, 'utf8')
+
+const PROTECTED = ROUTES.filter(
+  (r) => !AUTH_ROUTES.some((a) => r.path === a || r.path.startsWith(a + '/'))
+)
+
+describe('API route inventory', () => {
+  it('finds every route file', () => {
+    expect(ROUTES.length).toBe(26)
   })
 
-  describe('CRUD Endpoints', () => {
-    it('should have tenant endpoints', () => {
-      expect('/api/tenants').toBeDefined()
-      expect('/api/tenants/[id]').toBeDefined()
-    })
-
-    it('should have employee endpoints', () => {
-      expect('/api/employees').toBeDefined()
-      expect('/api/employees/[id]').toBeDefined()
-    })
-
-    it('should have route endpoints', () => {
-      expect('/api/routes').toBeDefined()
-      expect('/api/routes/[id]').toBeDefined()
-    })
-
-    it('should have trip endpoints', () => {
-      expect('/api/trips').toBeDefined()
-      expect('/api/trips/[id]').toBeDefined()
-      expect('/api/trips/[id]/transition').toBeDefined()
-    })
-
-    it('should have incident endpoints', () => {
-      expect('/api/incidents').toBeDefined()
-      expect('/api/incidents/[id]').toBeDefined()
-    })
+  it('exposes the core resources', () => {
+    const paths = ROUTES.map((r) => r.path)
+    for (const expected of [
+      '/tenants',
+      '/users',
+      '/employees',
+      '/routes',
+      '/trips',
+      '/trips/[id]/transition',
+      '/incidents',
+      '/invoices',
+      '/vehicles',
+      '/subscriptions',
+      '/schedules',
+    ]) {
+      expect(paths, `missing ${expected}`).toContain(expected)
+    }
   })
 })
 
-describe('Security', () => {
-  describe('Authentication', () => {
-    it('should require authentication for protected routes', () => {
-      const protectedRoutes = ['/api/tenants', '/api/employees', '/api/trips']
-      protectedRoutes.forEach(route => {
-        expect(route).toMatch(/^\/api\//)
-      })
-    })
+/** Splits a route file into its exported handlers. */
+function splitHandlers(src: string): { name: string; body: string }[] {
+  const re = /export async function (GET|POST|PATCH|DELETE|PUT)\s*\(/g
+  const marks: { name: string; at: number }[] = []
+  let m: RegExpExecArray | null
+  while ((m = re.exec(src)) !== null) marks.push({ name: m[1], at: m.index })
+  return marks.map((mark, i) => ({
+    name: mark.name,
+    body: src.slice(mark.at, i + 1 < marks.length ? marks[i + 1].at : src.length),
+  }))
+}
+
+describe('Authentication - EVERY handler in every non-auth route authenticates', () => {
+  it('covers all 22 non-auth routes', () => {
+    expect(PROTECTED.length).toBe(22)
   })
 
-  describe('Authorization', () => {
-    it('should enforce role-based access', () => {
-      const roles = ['super_admin', 'operations_manager', 'dispatcher', 'driver', 'customer']
-      expect(roles.length).toBeGreaterThan(0)
-    })
+  const handlers = PROTECTED.flatMap((r) =>
+    splitHandlers(read(r.file)).map((h) => ({ path: r.path, handler: h.name, body: h.body }))
+  )
 
-    it('should enforce tenant isolation', () => {
-      const tenantA = 'tenant-a'
-      const tenantB = 'tenant-b'
-      expect(tenantA).not.toBe(tenantB)
-    })
+  it('finds a meaningful number of handlers', () => {
+    expect(handlers.length).toBeGreaterThan(50)
   })
 
-  describe('Input Validation', () => {
-    it('should validate email format', () => {
-      const validEmail = 'test@example.com'
-      const invalidEmail = 'invalid-email'
-      expect(validEmail).toMatch(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
-      expect(invalidEmail).not.toMatch(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
-    })
+  it.each(handlers.map((h) => `${h.path} ${h.handler}`))('%s authenticates', (label) => {
+    const [path, handler] = label.split(' ')
+    const h = handlers.find((x) => x.path === path && x.handler === handler)!
+    expect(h.body, `${label} has no authorize() call`).toMatch(/authorize\(/)
+    expect(h.body, `${label} ignores the authorize() result`).toMatch(
+      /if \(!auth\.ok\) return auth\.response/
+    )
+  })
+})
 
-    it('should validate UUID format', () => {
-      const validUUID = '550e8400-e29b-41d4-a716-446655440000'
-      const invalidUUID = 'not-a-uuid'
-      expect(validUUID).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
-      expect(invalidUUID).not.toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
-    })
+describe('Tenant isolation - writes carry a tenant scope', () => {
+  const writeRoutes = ROUTES.filter(
+    (r) =>
+      !AUTH_ROUTES.some((a) => r.path === a || r.path.startsWith(a + '/')) &&
+      /export async function (POST|PATCH)/.test(read(r.file))
+  )
+
+  it('finds write routes to check', () => {
+    expect(writeRoutes.length).toBeGreaterThan(10)
+  })
+
+  it.each(writeRoutes.map((r) => r.path))('%s scopes by tenant', (path) => {
+    const src = read(ROUTES.find((r) => r.path === path)!.file)
+    expect(src, `${path} does not scope by tenant`).toMatch(/auth\.tenantId/)
+  })
+})
+
+describe('Constitution VII - no hard delete anywhere', () => {
+  it.each(ROUTES.map((r) => r.path))('%s has no .delete() call', (path) => {
+    const src = read(ROUTES.find((r) => r.path === path)!.file)
+    expect(src, `${path} still performs a hard delete`).not.toMatch(/\.delete\(\)/)
+  })
+})
+
+describe('Constitution VIII - no service role key in the API layer', () => {
+  it.each(ROUTES.map((r) => r.path))('%s avoids the service role key', (path) => {
+    const src = read(ROUTES.find((r) => r.path === path)!.file)
+    expect(src, `${path} references the service role key`).not.toMatch(/SERVICE_ROLE/)
+  })
+})
+
+describe('Input validation - writes validate with Zod', () => {
+  const postRoutes = ROUTES.filter(
+    (r) => !AUTH_ROUTES.includes(r.path) && /export async function POST/.test(read(r.file))
+  )
+
+  it.each(postRoutes.map((r) => r.path))('%s validates its body', (path) => {
+    const src = read(ROUTES.find((r) => r.path === path)!.file)
+    expect(src, `${path} does not use safeParse`).toMatch(/\.safeParse\(/)
+  })
+})
+
+describe('Authentication - no route reads user_metadata', () => {
+  it.each(ROUTES.map((r) => r.path))('%s uses app_metadata only', (path) => {
+    const src = read(ROUTES.find((r) => r.path === path)!.file)
+    expect(src, `${path} reads user_metadata`).not.toMatch(/user_metadata/)
   })
 })

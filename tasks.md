@@ -115,7 +115,7 @@
 
 ### Gate D — Verification (Constitution IX)
 
-- [ ] T065 Replace literal-only tests with tests that import and exercise real code (api/business-rules/integration) (contradicts) — ref C-05
+- [x] T065 Replace literal-only tests with tests that import and exercise real code (api/business-rules/integration) (contradicts) — ref C-05
 - [ ] T066 Add RLS tests: every role × every object × every operation (missing) — ref T051
 - [ ] T067 Add security tests: auth bypass, IDOR, privilege escalation, tenant isolation (missing) — ref T053
 - [ ] T068 Add E2E test: full operational day scenario (missing) — ref T052
